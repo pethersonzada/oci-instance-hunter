@@ -66,6 +66,21 @@ def try_launch_instance(image_id):
     return response.data.id
 
 
+def is_capacity_error(e):
+    """
+    Checa pelo code do erro, que e estavel, em vez de string livre
+    da mensagem, que a Oracle pode reformular sem aviso.
+    """
+    if e.status != 500:
+        return False
+
+    if e.code == "InternalError":
+        return True
+
+    msg = (e.message or "").lower()
+    return "out of" in msg and "capacity" in msg
+
+
 def main():
     image_id = get_image_id()
     print(f"Imagem do Ubuntu encontrada: {image_id}")
@@ -83,10 +98,12 @@ def main():
             exit(0)
 
         except oci.exceptions.ServiceError as e:
-            if e.status == 500 and "Out of capacity" in e.message:
-                print(f"[{timestamp}] Tentativa {tentativa}: sem capacidade. Aguardando {SLEEP_SECONDS}s...")
+            if is_capacity_error(e):
+                print(f"[{timestamp}] Tentativa {tentativa}: sem capacidade "
+                      f"(status={e.status}, code={e.code}). Aguardando {SLEEP_SECONDS}s...")
             else:
-                print(f"[{timestamp}] Erro inesperado da API da OCI: {e}")
+                print(f"[{timestamp}] Erro inesperado da API da OCI "
+                      f"(status={e.status}, code={e.code}): {e.message}")
                 exit(1)
 
         time.sleep(SLEEP_SECONDS)
