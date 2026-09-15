@@ -19,10 +19,21 @@ compartment_id = os.getenv("OCI_COMPARTMENT")
 subnet_id = os.getenv("OCI_SUBNET_ID")
 ssh_pub_key = os.getenv("SSH_PUBLIC_KEY")
 
-SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", "30"))
+SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", "45"))
 MAX_RUNTIME_SECONDS = int(os.getenv("MAX_RUNTIME_SECONDS", "21000"))
 
 compute_client = ComputeClient(config)
+
+# Codes que significam "isso nunca vai dar certo, tentando de novo".
+# Tudo que NÃO estiver aqui e tratado como retryable.
+FATAL_CODES = {
+    "NotAuthenticated",       # credencial errada
+    "NotAuthorized",          # sem permissão no compartment/policy
+    "InvalidParameter",       # parametro tipo AD errado, subnet errada
+    "LimitExceeded",          # estourou quota da tier free
+    "QuotaExceeded",
+    "TenantIsOnPaymentHold",
+}
 
 
 def get_image_id():
@@ -66,19 +77,16 @@ def try_launch_instance(image_id):
     return response.data.id
 
 
-def is_capacity_error(e):
-    """
-    Checa pelo code do erro, que e estavel, em vez de string livre
-    da mensagem, que a Oracle pode reformular sem aviso.
-    """
-    if e.status != 500:
-        return False
+def get_backoff_seconds(e):
+    if e.status == 429 or e.code == "TooManyRequests":
+        return SLEEP_SECONDS * 6
 
-    if e.code == "InternalError":
-        return True
+    if e.status >= 500:
+        return SLEEP_SECONDS
 
-    msg = (e.message or "").lower()
-    return "out of" in msg and "capacity" in msg
+    # qualquer outro retryable nao mapeado: espera um pouco mais,
+    # por seguranca, ja que nao sabemos a causa exata
+    return SLEEP_SECONDS * 3
 
 
 def main():
@@ -98,17 +106,25 @@ def main():
             exit(0)
 
         except oci.exceptions.ServiceError as e:
-            if is_capacity_error(e):
-                print(f"[{timestamp}] Tentativa {tentativa}: sem capacidade "
-                      f"(status={e.status}, code={e.code}). Aguardando {SLEEP_SECONDS}s...")
-            else:
-                print(f"[{timestamp}] Erro inesperado da API da OCI "
+            if e.code in FATAL_CODES:
+                print(f"[{timestamp}] Erro FATAL da API da OCI "
                       f"(status={e.status}, code={e.code}): {e.message}")
+                print("Esse erro nao se resolve tentando de novo. Corrija a causa e reinicie.")
                 exit(1)
 
-        time.sleep(SLEEP_SECONDS)
+            backoff = get_backoff_seconds(e)
+            print(f"[{timestamp}] Tentativa {tentativa}: erro retryable "
+                  f"(status={e.status}, code={e.code}) -> '{e.message}'. "
+                  f"Aguardando {backoff}s...")
+            time.sleep(backoff)
 
-    print("Tempo maximo de execucao atingido sem sucesso. O workflow sera reanimado no proximo agendamento.")
+        except Exception as e:
+            # erro nao-OCI (rede, timeout, etc): tambem retryable, com espera padrao
+            print(f"[{timestamp}] Tentativa {tentativa}: erro inesperado nao-OCI: {e}. "
+                  f"Aguardando {SLEEP_SECONDS}s...")
+            time.sleep(SLEEP_SECONDS)
+
+    print("Tempo máximo de execucao atingido sem sucesso. O workflow sera reanimado no proximo agendamento.")
 
 
 if __name__ == "__main__":
