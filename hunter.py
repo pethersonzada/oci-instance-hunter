@@ -4,7 +4,7 @@ from oci.core import ComputeClient
 from oci.core.models import (
     LaunchInstanceDetails,
     CreateVnicDetails,
-    LaunchInstanceDetailsShapeConfigDetails
+    LaunchInstanceDetailsShapeConfig
 )
 
 config = {
@@ -45,7 +45,7 @@ def try_launch_instance():
         compartment_id=compartment_id,
         availability_domain="DOBJ:SA-SAOPAULO-1-AD-1",
         shape="VM.Standard.A1.Flex",
-        shape_config=LaunchInstanceDetailsShapeConfigDetails(
+        shape_config=LaunchInstanceDetailsShapeConfig(
             ocpus=4.0,
             memory_in_gbs=24.0
         ),
