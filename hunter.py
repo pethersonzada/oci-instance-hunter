@@ -6,8 +6,7 @@ from oci.core import ComputeClient
 from oci.identity import IdentityClient
 from oci.core.models import (
     LaunchInstanceDetails,
-    CreateVnicDetails,
-    InstanceShapeConfigDetails
+    CreateVnicDetails
 )
 
 REQUIRED_ENVS = ["OCI_USER", "OCI_PRIVATE_KEY", "OCI_FINGERPRINT", "OCI_TENANCY", "OCI_COMPARTMENT", "OCI_SUBNET_ID", "SSH_PUBLIC_KEY"]
@@ -73,11 +72,6 @@ def get_image_id():
 
 
 def try_launch_instance(image_id, availability_domain):
-    shape_config = InstanceShapeConfigDetails(
-        ocpus=OCPUS,
-        memory_in_gbs=MEMORY_GBS
-    )
-
     vnic_details = CreateVnicDetails(
         subnet_id=subnet_id,
         assign_public_ip=True
@@ -87,7 +81,10 @@ def try_launch_instance(image_id, availability_domain):
         compartment_id=compartment_id,
         availability_domain=availability_domain,
         shape="VM.Standard.A1.Flex",
-        shape_config=shape_config,
+        shape_config={
+            "ocpus": OCPUS,
+            "memory_in_gbs": MEMORY_GBS
+        },
         display_name="instance-hunter-auto",
         image_id=image_id,
         create_vnic_details=vnic_details,
