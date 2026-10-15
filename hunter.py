@@ -2,14 +2,14 @@ import os
 import time
 import sys
 import oci
-from oci.core import ComputeClient, IdentityClient
+from oci.core import ComputeClient
+from oci.identity import IdentityClient
 from oci.core.models import (
     LaunchInstanceDetails,
     CreateVnicDetails,
     InstanceShapeConfigDetails
 )
 
-# Validação estrita das variáveis de ambiente essenciais
 REQUIRED_ENVS = ["OCI_USER", "OCI_PRIVATE_KEY", "OCI_FINGERPRINT", "OCI_TENANCY", "OCI_COMPARTMENT", "OCI_SUBNET_ID", "SSH_PUBLIC_KEY"]
 missing_envs = [var for var in REQUIRED_ENVS if not os.getenv(var)]
 if missing_envs:
@@ -28,7 +28,6 @@ compartment_id = os.getenv("OCI_COMPARTMENT")
 subnet_id = os.getenv("OCI_SUBNET_ID")
 ssh_pub_key = os.getenv("SSH_PUBLIC_KEY")
 
-# Limites ajustados ao perfil da conta (2 OCPUs / 12 GB RAM por omissão)
 OCPUS = float(os.getenv("OCI_OCPUS", "2.0"))
 MEMORY_GBS = float(os.getenv("OCI_MEMORY_GBS", "12.0"))
 
@@ -37,7 +36,6 @@ MAX_RUNTIME_SECONDS = int(os.getenv("MAX_RUNTIME_SECONDS", "21000"))
 
 compute_client = ComputeClient(config)
 
-# Erros irrecuperáveis que exigem intervenção manual direta
 FATAL_CODES = {
     "NotAuthenticated",
     "NotAuthorized",
@@ -47,7 +45,6 @@ FATAL_CODES = {
 
 
 def get_availability_domain():
-    """Obtém dinamicamente o primeiro Availability Domain disponível no compartment."""
     try:
         identity_client = IdentityClient(config)
         ads = identity_client.list_availability_domains(compartment_id=compartment_id).data
@@ -59,7 +56,6 @@ def get_availability_domain():
 
 
 def get_image_id():
-    """Obtém a imagem oficial mais recente do Ubuntu 22.04 para a arquitetura Ampere A1."""
     images = compute_client.list_images(
         compartment_id=compartment_id,
         operating_system="Canonical Ubuntu",
@@ -77,7 +73,6 @@ def get_image_id():
 
 
 def try_launch_instance(image_id, availability_domain):
-    """Executa o pedido de lançamento da instância."""
     shape_config = InstanceShapeConfigDetails(
         ocpus=OCPUS,
         memory_in_gbs=MEMORY_GBS
@@ -106,7 +101,6 @@ def try_launch_instance(image_id, availability_domain):
 
 
 def get_backoff_seconds(e):
-    """Calcula o tempo de espera adaptativo de acordo com a resposta da API."""
     if e.status == 429 or e.code == "TooManyRequests":
         return SLEEP_SECONDS * 4
 
@@ -145,7 +139,6 @@ def main():
                 print("Execução interrompida por erro irrecuperável.")
                 sys.exit(1)
 
-            # Caso ocorra erro de limite (Quota/LimitExceeded)
             if e.code in ["LimitExceeded", "QuotaExceeded"]:
                 print(f"[{timestamp}] Erro de limite atingido ({e.code}): {e.message}")
                 print("Verifique se as especificações (OCPUs/RAM) excedem a quota disponível na conta.")
